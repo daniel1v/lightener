@@ -243,7 +243,7 @@ class LightenerLight(LightGroup):
         color_value = None
 
         if not any(k in data for k in color_attributes):
-            if self.color_mode == ColorMode.COLOR_TEMP and self.color_temp is not None:
+            if self.color_mode == ColorMode.COLOR_TEMP and self.color_temp_kelvin is not None:
                 color_attribute = ATTR_COLOR_TEMP_KELVIN
                 color_value = self.color_temp_kelvin
             elif self.color_mode == ColorMode.RGB and self.rgb_color is not None:
@@ -261,6 +261,7 @@ class LightenerLight(LightGroup):
             elif self.color_mode == ColorMode.XY and self.xy_color is not None:
                 color_attribute = ATTR_XY_COLOR
                 color_value = self.xy_color
+
 
         self._is_frozen = True
 
