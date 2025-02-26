@@ -11,7 +11,7 @@ import voluptuous as vol
 from homeassistant.components.group.light import FORWARDED_ATTRIBUTES, LightGroup
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
-    ATTR_COLOR_TEMP,
+    ATTR_COLOR_TEMP_KELVIN,
     ATTR_HS_COLOR,
     ATTR_RGB_COLOR,
     ATTR_RGBW_COLOR,
@@ -220,7 +220,7 @@ class LightenerLight(LightGroup):
         )
 
         color_attributes = [
-            ATTR_COLOR_TEMP,
+            ATTR_COLOR_TEMP_KELVIN,
             ATTR_RGB_COLOR,
             ATTR_RGBW_COLOR,
             ATTR_RGBWW_COLOR,
@@ -236,7 +236,7 @@ class LightenerLight(LightGroup):
             "Current color mode for `%s` is `%s` with value %s",
             self.entity_id,
             self.color_mode,
-            self.color_temp
+            self.color_temp_kelvin
         )
 
         color_attribute = None
@@ -244,8 +244,8 @@ class LightenerLight(LightGroup):
 
         if not any(k in data for k in color_attributes):
             if self.color_mode == ColorMode.COLOR_TEMP and self.color_temp is not None:
-                color_attribute = ATTR_COLOR_TEMP
-                color_value = self.color_temp
+                color_attribute = ATTR_COLOR_TEMP_KELVIN
+                color_value = self.color_temp_kelvin
             elif self.color_mode == ColorMode.RGB and self.rgb_color is not None:
                 color_attribute = ATTR_RGB_COLOR
                 color_value = self.rgb_color
