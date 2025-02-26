@@ -232,9 +232,17 @@ class LightenerLight(LightGroup):
             #     state = self.hass.states.get(entity.entity_id)
             #     if state.state == STATE_OFF:
 
+        _LOGGER.debug(
+            "Current color mode for `%s` is `%s` with value %s",
+            self.entity_id,
+            self.color_mode,
+            self.color_temp
+        )
+
         color_attribute = None
         color_value = None
-        if not any(k in kwargs for k in color_attributes):
+
+        if not any(k in data for k in color_attributes):
             if self.color_mode == ColorMode.COLOR_TEMP and self.color_temp is not None:
                 color_attribute = ATTR_COLOR_TEMP
                 color_value = self.color_temp
