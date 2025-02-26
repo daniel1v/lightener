@@ -219,6 +219,41 @@ class LightenerLight(LightGroup):
             brightness,
         )
 
+        color_attributes = [
+            ATTR_COLOR_TEMP,
+            ATTR_RGB_COLOR,
+            ATTR_RGBW_COLOR,
+            ATTR_RGBWW_COLOR,
+            ATTR_HS_COLOR,
+            ATTR_XY_COLOR,
+        ]
+
+            # if not any(k in entity_data for k in color_attributes) and service == SERVICE_TURN_ON:
+            #     state = self.hass.states.get(entity.entity_id)
+            #     if state.state == STATE_OFF:
+
+        color_attribute = None
+        color_value = None
+        if not any(k in kwargs for k in color_attributes):
+            if self.color_mode == ColorMode.COLOR_TEMP and self.color_temp is not None:
+                color_attribute = ATTR_COLOR_TEMP
+                color_value = self.color_temp
+            elif self.color_mode == ColorMode.RGB and self.rgb_color is not None:
+                color_attribute = ATTR_RGB_COLOR
+                color_value = self.rgb_color
+            elif self.color_mode == ColorMode.RGBW and self.rgbw_color is not None:
+                color_attribute = ATTR_RGBW_COLOR
+                color_value = self.rgbw_color
+            elif self.color_mode == ColorMode.RGBWW and self.rgbww_color is not None:
+                color_attribute = ATTR_RGBWW_COLOR
+                color_value = self.rgbww_color
+            elif self.color_mode == ColorMode.HS and self.hs_color is not None:
+                color_attribute = ATTR_HS_COLOR
+                color_value = self.hs_color
+            elif self.color_mode == ColorMode.XY and self.xy_color is not None:
+                color_attribute = ATTR_XY_COLOR
+                color_value = self.xy_color
+
         self._is_frozen = True
 
         for entity in self._entities:
@@ -245,30 +280,8 @@ class LightenerLight(LightGroup):
                 if brightness is not None:
                     entity_data[ATTR_BRIGHTNESS] = entity_brightness
 
-                # color_attributes = [
-                #     ATTR_COLOR_TEMP,
-                #     ATTR_RGB_COLOR,
-                #     ATTR_RGBW_COLOR,
-                #     ATTR_RGBWW_COLOR,
-                #     ATTR_HS_COLOR,
-                #     ATTR_XY_COLOR,
-                # ]
-
-                # if not any(k in entity_data for k in color_attributes) and service == SERVICE_TURN_ON:
-                #     state = self.hass.states.get(entity.entity_id)
-                #     if state.state == STATE_OFF:
-                if self.color_mode == ColorMode.COLOR_TEMP and self.color_temp is not None:
-                    entity_data[ATTR_COLOR_TEMP] = self.color_temp
-                elif self.color_mode == ColorMode.RGB and self.rgb_color is not None:
-                    entity_data[ATTR_RGB_COLOR] = self.rgb_color
-                elif self.color_mode == ColorMode.RGBW and self.rgbw_color is not None:
-                    entity_data[ATTR_RGBW_COLOR] = self.rgbw_color
-                elif self.color_mode == ColorMode.RGBWW and self.rgbww_color is not None:
-                    entity_data[ATTR_RGBWW_COLOR] = self.rgbww_color
-                elif self.color_mode == ColorMode.HS and self.hs_color is not None:
-                    entity_data[ATTR_HS_COLOR] = self.hs_color
-                elif self.color_mode == ColorMode.XY and self.xy_color is not None:
-                    entity_data[ATTR_XY_COLOR] = self.xy_color
+                if color_value is not None:
+                    entity_data[color_attribute] = color_value
 
             # Set the proper entity ID.
             entity_data[ATTR_ENTITY_ID] = entity.entity_id
