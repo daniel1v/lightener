@@ -11,7 +11,13 @@ import voluptuous as vol
 from homeassistant.components.group.light import FORWARDED_ATTRIBUTES, LightGroup
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP,
+    ATTR_HS_COLOR,
+    ATTR_RGB_COLOR,
+    ATTR_RGBW_COLOR,
+    ATTR_RGBWW_COLOR,
     ATTR_TRANSITION,
+    ATTR_XY_COLOR,
     ColorMode,
 )
 from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
@@ -238,6 +244,28 @@ class LightenerLight(LightGroup):
                 # Set the translated brightness level.
                 if brightness is not None:
                     entity_data[ATTR_BRIGHTNESS] = entity_brightness
+                color_attributes = [
+                    ATTR_COLOR_TEMP,
+                    ATTR_RGB_COLOR,
+                    ATTR_RGBW_COLOR,
+                    ATTR_RGBWW_COLOR,
+                    ATTR_HS_COLOR,
+                    ATTR_XY_COLOR,
+                ]
+
+                if not any(k in entity_data for k in color_attributes):
+                    if self.color_mode == ColorMode.COLOR_TEMP and self.color_temp is not None:
+                        entity_data[ATTR_COLOR_TEMP] = self.color_temp
+                    elif self.color_mode == ColorMode.RGB and self.rgb_color is not None:
+                        entity_data[ATTR_RGB_COLOR] = self.rgb_color
+                    elif self.color_mode == ColorMode.RGBW and self.rgbw_color is not None:
+                        entity_data[ATTR_RGBW_COLOR] = self.rgbw_color
+                    elif self.color_mode == ColorMode.RGBWW and self.rgbww_color is not None:
+                        entity_data[ATTR_RGBWW_COLOR] = self.rgbww_color
+                    elif self.color_mode == ColorMode.HS and self.hs_color is not None:
+                        entity_data[ATTR_HS_COLOR] = self.hs_color
+                    elif self.color_mode == ColorMode.XY and self.xy_color is not None:
+                        entity_data[ATTR_XY_COLOR] = self.xy_color
 
             # Set the proper entity ID.
             entity_data[ATTR_ENTITY_ID] = entity.entity_id
