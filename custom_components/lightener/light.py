@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from types import MappingProxyType
 from typing import Any
@@ -29,6 +30,7 @@ from homeassistant.const import (
     CONF_LIGHTS,
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
+    STATE_OFF,
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -229,8 +231,7 @@ class LightenerLight(LightGroup):
         ]
 
             # if not any(k in entity_data for k in color_attributes) and service == SERVICE_TURN_ON:
-            #     state = self.hass.states.get(entity.entity_id)
-            #     if state.state == STATE_OFF:
+
 
         _LOGGER.debug(
             "Current color mode for `%s` is `%s` with value %s",
@@ -262,8 +263,9 @@ class LightenerLight(LightGroup):
                 color_attribute = ATTR_XY_COLOR
                 color_value = self.xy_color
 
-
         self._is_frozen = True
+
+        tasks = []
 
         for entity in self._entities:
             service = SERVICE_TURN_ON
@@ -290,18 +292,20 @@ class LightenerLight(LightGroup):
                     entity_data[ATTR_BRIGHTNESS] = entity_brightness
 
                 if color_value is not None:
-                    entity_data[color_attribute] = color_value
+                    state = self.hass.states.get(entity.entity_id)
+                    if state is not None and state.state == STATE_OFF:
+                        entity_data[color_attribute] = color_value
 
             # Set the proper entity ID.
             entity_data[ATTR_ENTITY_ID] = entity.entity_id
 
-            await self.hass.services.async_call(
+            tasks.append(self.hass.services.async_call(
                 LIGHT_DOMAIN,
                 service,
                 entity_data,
                 blocking=True,
                 context=self._context,
-            )
+            ))
 
             _LOGGER.debug(
                 "Service `%s` called for `%s` (%s) with `%s`",
@@ -310,6 +314,8 @@ class LightenerLight(LightGroup):
                 entity.type,
                 entity_data,
             )
+
+        await asyncio.gather(*tasks)
 
         self._is_frozen = False
 
