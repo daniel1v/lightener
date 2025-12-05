@@ -221,6 +221,7 @@ class LightenerLight(LightGroup):
             brightness,
         )
 
+        # Identify color attributes already provided so we can default when needed.
         color_attributes = [
             ATTR_COLOR_TEMP_KELVIN,
             ATTR_RGB_COLOR,
@@ -229,9 +230,6 @@ class LightenerLight(LightGroup):
             ATTR_HS_COLOR,
             ATTR_XY_COLOR,
         ]
-
-            # if not any(k in entity_data for k in color_attributes) and service == SERVICE_TURN_ON:
-
 
         _LOGGER.debug(
             "Current color mode for `%s` is `%s` with value %s",
@@ -265,57 +263,70 @@ class LightenerLight(LightGroup):
 
         self._is_frozen = True
 
-        tasks = []
+        async def _safe_service_call(
+            entity: LightenerControlledLight, service: str, entity_data: dict
+        ) -> None:
+            """Call a service for an entity, logging success and guarding failures."""
+            try:
+                await self.hass.services.async_call(
+                    LIGHT_DOMAIN,
+                    service,
+                    entity_data,
+                    blocking=True,
+                    context=self._context,
+                )
+                _LOGGER.debug(
+                    "Service `%s` called for `%s` (%s) with `%s`",
+                    service,
+                    entity.entity_id,
+                    entity.type,
+                    entity_data,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.exception(
+                    "Service `%s` for `%s` (%s) failed: %s; payload=%s",
+                    service,
+                    entity.entity_id,
+                    entity.type,
+                    exc,
+                    entity_data,
+                )
 
-        for entity in self._entities:
-            service = SERVICE_TURN_ON
-            entity_brightness = None
+        async with asyncio.TaskGroup() as group:
+            for entity in self._entities:
+                service = SERVICE_TURN_ON
+                entity_brightness = None
 
-            # If the brightness is being set in the lightener, translate it to the entity level.
-            if brightness is not None:
-                entity_brightness = entity.translate_brightness(brightness)
-
-            # If the light brightness level is zero, we turn it off instead.
-            if entity_brightness == 0:
-                service = SERVICE_TURN_OFF
-                entity_data = {}
-
-                # "Transition" is the only additional data allowed with the turn_off service.
-                if ATTR_TRANSITION in data:
-                    entity_data[ATTR_TRANSITION] = data[ATTR_TRANSITION]
-            else:
-                # Make a copy of the data being sent to the lightener call so we can modify it.
-                entity_data = data.copy()
-
-                # Set the translated brightness level.
+                # If the brightness is being set in the lightener, translate it to the entity level.
                 if brightness is not None:
-                    entity_data[ATTR_BRIGHTNESS] = entity_brightness
+                    entity_brightness = entity.translate_brightness(brightness)
 
-                if color_value is not None:
-                    state = self.hass.states.get(entity.entity_id)
-                    if state is not None and state.state == STATE_OFF:
-                        entity_data[color_attribute] = color_value
+                # If the light brightness level is zero, we turn it off instead.
+                if entity_brightness == 0:
+                    service = SERVICE_TURN_OFF
+                    entity_data = {}
 
-            # Set the proper entity ID.
-            entity_data[ATTR_ENTITY_ID] = entity.entity_id
+                    # "Transition" is the only additional data allowed with the turn_off service.
+                    if ATTR_TRANSITION in data:
+                        entity_data[ATTR_TRANSITION] = data[ATTR_TRANSITION]
+                else:
+                    # Make a copy of the data being sent to the lightener call so we can modify it.
+                    entity_data = data.copy()
 
-            tasks.append(self.hass.services.async_call(
-                LIGHT_DOMAIN,
-                service,
-                entity_data,
-                blocking=True,
-                context=self._context,
-            ))
+                    # Set the translated brightness level.
+                    if brightness is not None:
+                        entity_data[ATTR_BRIGHTNESS] = entity_brightness
 
-            _LOGGER.debug(
-                "Service `%s` called for `%s` (%s) with `%s`",
-                service,
-                entity.entity_id,
-                entity.type,
-                entity_data,
-            )
+                    if color_value is not None and color_attribute is not None:
+                        state = self.hass.states.get(entity.entity_id)
+                        if state is not None and state.state == STATE_OFF:
+                            entity_data[color_attribute] = color_value
 
-        await asyncio.gather(*tasks)
+                # Set the proper entity ID.
+                entity_data[ATTR_ENTITY_ID] = entity.entity_id
+
+                # Submit the service call concurrently, guarded to avoid cancelling siblings on failure.
+                group.create_task(_safe_service_call(entity, service, entity_data))
 
         self._is_frozen = False
 
@@ -604,7 +615,7 @@ def create_reverse_brightness_map_on_off(reverse_map: dict) -> dict:
     on_levels = [i for i in range(1, 256) if i not in reverse_map[0]]
 
     # The "on" levels are possible for all non-zero levels.
-    reverse_map_on_off = {i: on_levels for i in range(1, 256)}
+    reverse_map_on_off = dict.fromkeys(range(1, 256), on_levels)
 
     # The "off" matches the normal reverse map.
     reverse_map_on_off[0] = reverse_map[0]
