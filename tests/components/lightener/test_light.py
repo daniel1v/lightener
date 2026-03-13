@@ -1,5 +1,6 @@
 """Tests for the light platform."""
 
+import asyncio
 from unittest.mock import ANY, Mock, patch
 from uuid import uuid4
 
@@ -68,6 +69,50 @@ async def test_turn_on_resilient_to_single_failure(
 
     # light.test2 should have ended up on despite light.test1 failing
     assert hass.states.get("light.test2").state == "on"
+
+
+async def test_turn_on_coalesces_pending_brightness_updates(
+    hass: HomeAssistant, create_lightener
+):
+    """Ensure rapid brightness updates collapse to the latest pending value."""
+
+    lightener: LightenerLight = await create_lightener()
+
+    calls: list[int | None] = []
+    first_call_started = asyncio.Event()
+    release_first_call = asyncio.Event()
+
+    orig_async_call = ServiceRegistry.async_call
+
+    async def fake_async_call(self, domain, service, data, blocking=True, context=None):
+        brightness = data.get("brightness")
+        calls.append(brightness)
+
+        if brightness == 10:
+            first_call_started.set()
+            await release_first_call.wait()
+
+        return await orig_async_call(
+            self, domain, service, data, blocking=blocking, context=context
+        )
+
+    with patch.object(
+        ServiceRegistry, "async_call", side_effect=fake_async_call, autospec=True
+    ):
+        first_task = hass.async_create_task(lightener.async_turn_on(brightness=10))
+        await first_call_started.wait()
+
+        second_task = hass.async_create_task(lightener.async_turn_on(brightness=20))
+        third_task = hass.async_create_task(lightener.async_turn_on(brightness=30))
+
+        release_first_call.set()
+
+        await asyncio.gather(first_task, second_task, third_task)
+        await hass.async_block_till_done()
+
+    assert calls == [10, 30]
+    assert lightener.brightness == 30
+    assert hass.states.get("light.test1").attributes["brightness"] == 30
 
 
 ###########################################################

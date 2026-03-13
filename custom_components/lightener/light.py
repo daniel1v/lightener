@@ -135,6 +135,7 @@ class LightenerLight(LightGroup):
 
         self._attr_has_entity_name = unique_id is not None
         self._turn_on_lock = asyncio.Lock()
+        self._pending_turn_on_kwargs: dict[str, Any] | None = None
         self._refresh_task: asyncio.Task | None = None
 
         if self._attr_has_entity_name:
@@ -193,170 +194,184 @@ class LightenerLight(LightGroup):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Forward the turn_on command to all controlled lights."""
+        # Slider interactions can emit many brightness updates in quick succession.
+        # Keep only the newest pending request while one call is already in flight.
+        self._pending_turn_on_kwargs = dict(kwargs)
+
+        if self._turn_on_lock.locked():
+            return
+
         async with self._turn_on_lock:
-            # This is basically a copy of LightGroup::async_turn_on but it has been changed
-            # so we can pass different brightness to each light.
+            while self._pending_turn_on_kwargs is not None:
+                pending_kwargs = self._pending_turn_on_kwargs
+                self._pending_turn_on_kwargs = None
+                await self._async_apply_turn_on(pending_kwargs)
 
-            # List all attributes we want to forward.
-            data = {
-                key: value for key, value in kwargs.items() if key in FORWARDED_ATTRIBUTES
-            }
+    async def _async_apply_turn_on(self, kwargs: dict[str, Any]) -> None:
+        """Apply a single turn_on request to the controlled lights."""
+        # This is basically a copy of LightGroup::async_turn_on but it has been changed
+        # so we can pass different brightness to each light.
 
-            previous_attr_brightness = self._attr_brightness
+        # List all attributes we want to forward.
+        data = {
+            key: value for key, value in kwargs.items() if key in FORWARDED_ATTRIBUTES
+        }
 
-            # Retrieve the brightness being set to the Lightener
-            brightness = kwargs.get(ATTR_BRIGHTNESS)
+        previous_attr_brightness = self._attr_brightness
 
-            # If the brightness is not being set, check if it was set in the Lightener.
-            if brightness is None and self._attr_brightness is not None:
-                brightness = self._attr_brightness
-            else:
-                # Update the Lightener brightness level to the one being set.
-                self._attr_brightness = brightness
+        # Retrieve the brightness being set to the Lightener
+        brightness = kwargs.get(ATTR_BRIGHTNESS)
 
-            if brightness is None:
-                brightness = self._prefered_brightness
-            else:
-                self._prefered_brightness = brightness
+        # If the brightness is not being set, check if it was set in the Lightener.
+        if brightness is None and self._attr_brightness is not None:
+            brightness = self._attr_brightness
+        else:
+            # Update the Lightener brightness level to the one being set.
+            self._attr_brightness = brightness
 
-            _LOGGER.debug(
-                "[Turn On] Attempting to set brightness of `%s` to `%s`",
-                self.entity_id,
-                brightness,
-            )
+        if brightness is None:
+            brightness = self._prefered_brightness
+        else:
+            self._prefered_brightness = brightness
 
-            # Identify color attributes already provided so we can default when needed.
-            color_attributes = [
-                ATTR_COLOR_TEMP_KELVIN,
-                ATTR_RGB_COLOR,
-                ATTR_RGBW_COLOR,
-                ATTR_RGBWW_COLOR,
-                ATTR_HS_COLOR,
-                ATTR_XY_COLOR,
-            ]
+        _LOGGER.debug(
+            "[Turn On] Attempting to set brightness of `%s` to `%s`",
+            self.entity_id,
+            brightness,
+        )
 
-            _LOGGER.debug(
-                "Current color mode for `%s` is `%s` with value %s",
-                self.entity_id,
-                self.color_mode,
-                self.color_temp_kelvin
-            )
+        # Identify color attributes already provided so we can default when needed.
+        color_attributes = [
+            ATTR_COLOR_TEMP_KELVIN,
+            ATTR_RGB_COLOR,
+            ATTR_RGBW_COLOR,
+            ATTR_RGBWW_COLOR,
+            ATTR_HS_COLOR,
+            ATTR_XY_COLOR,
+        ]
 
-            color_attribute = None
-            color_value = None
+        _LOGGER.debug(
+            "Current color mode for `%s` is `%s` with value %s",
+            self.entity_id,
+            self.color_mode,
+            self.color_temp_kelvin,
+        )
 
-            if not any(k in data for k in color_attributes):
-                if self.color_mode == ColorMode.COLOR_TEMP and self.color_temp_kelvin is not None:
-                    color_attribute = ATTR_COLOR_TEMP_KELVIN
-                    color_value = self.color_temp_kelvin
-                elif self.color_mode == ColorMode.RGB and self.rgb_color is not None:
-                    color_attribute = ATTR_RGB_COLOR
-                    color_value = self.rgb_color
-                elif self.color_mode == ColorMode.RGBW and self.rgbw_color is not None:
-                    color_attribute = ATTR_RGBW_COLOR
-                    color_value = self.rgbw_color
-                elif self.color_mode == ColorMode.RGBWW and self.rgbww_color is not None:
-                    color_attribute = ATTR_RGBWW_COLOR
-                    color_value = self.rgbww_color
-                elif self.color_mode == ColorMode.HS and self.hs_color is not None:
-                    color_attribute = ATTR_HS_COLOR
-                    color_value = self.hs_color
-                elif self.color_mode == ColorMode.XY and self.xy_color is not None:
-                    color_attribute = ATTR_XY_COLOR
-                    color_value = self.xy_color
+        color_attribute = None
+        color_value = None
 
-            self._is_frozen = True
-            refresh_needed = False
+        if not any(k in data for k in color_attributes):
+            if self.color_mode == ColorMode.COLOR_TEMP and self.color_temp_kelvin is not None:
+                color_attribute = ATTR_COLOR_TEMP_KELVIN
+                color_value = self.color_temp_kelvin
+            elif self.color_mode == ColorMode.RGB and self.rgb_color is not None:
+                color_attribute = ATTR_RGB_COLOR
+                color_value = self.rgb_color
+            elif self.color_mode == ColorMode.RGBW and self.rgbw_color is not None:
+                color_attribute = ATTR_RGBW_COLOR
+                color_value = self.rgbw_color
+            elif self.color_mode == ColorMode.RGBWW and self.rgbww_color is not None:
+                color_attribute = ATTR_RGBWW_COLOR
+                color_value = self.rgbww_color
+            elif self.color_mode == ColorMode.HS and self.hs_color is not None:
+                color_attribute = ATTR_HS_COLOR
+                color_value = self.hs_color
+            elif self.color_mode == ColorMode.XY and self.xy_color is not None:
+                color_attribute = ATTR_XY_COLOR
+                color_value = self.xy_color
 
-            async def _safe_service_call(
-                entity: LightenerControlledLight, service: str, entity_data: dict
-            ) -> None:
-                """Call a service for an entity, logging success and guarding failures."""
-                try:
-                    await self.hass.services.async_call(
-                        LIGHT_DOMAIN,
-                        service,
-                        entity_data,
-                        blocking=True,
-                        context=self._context,
-                    )
-                    _LOGGER.debug(
-                        "Service `%s` called for `%s` (%s) with `%s`",
-                        service,
-                        entity.entity_id,
-                        entity.type,
-                        entity_data,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    _LOGGER.exception(
-                        "Service `%s` for `%s` (%s) failed: %s; payload=%s",
-                        service,
-                        entity.entity_id,
-                        entity.type,
-                        exc,
-                        entity_data,
-                    )
+        self._is_frozen = True
+        refresh_needed = False
 
+        async def _safe_service_call(
+            entity: LightenerControlledLight, service: str, entity_data: dict
+        ) -> None:
+            """Call a service for an entity, logging success and guarding failures."""
             try:
-                async with asyncio.TaskGroup() as group:
-                    for entity in self._entities:
-                        service = SERVICE_TURN_ON
-                        entity_brightness = None
-
-                        # If the brightness is being set in the lightener, translate it to the entity level.
-                        if brightness is not None:
-                            entity_brightness = entity.translate_brightness(brightness)
-
-                        # If the light brightness level is zero, we turn it off instead.
-                        if entity_brightness == 0:
-                            service = SERVICE_TURN_OFF
-                            entity_data = {}
-
-                            # "Transition" is the only additional data allowed with the turn_off service.
-                            if ATTR_TRANSITION in data:
-                                entity_data[ATTR_TRANSITION] = data[ATTR_TRANSITION]
-                        else:
-                            # Make a copy of the data being sent to the lightener call so we can modify it.
-                            entity_data = data.copy()
-
-                            # Set the translated brightness level.
-                            if brightness is not None:
-                                entity_data[ATTR_BRIGHTNESS] = entity_brightness
-
-                            if color_value is not None and color_attribute is not None:
-                                state = self.hass.states.get(entity.entity_id)
-                                if state is not None and state.state == STATE_OFF:
-                                    entity_data[color_attribute] = color_value
-
-                        # Set the proper entity ID.
-                        entity_data[ATTR_ENTITY_ID] = entity.entity_id
-
-                        # Submit the service call concurrently, guarded to avoid cancelling siblings on failure.
-                        group.create_task(_safe_service_call(entity, service, entity_data))
-                        refresh_needed = True
-            finally:
-                self._is_frozen = False
-
-            attr_changed = self._attr_brightness != previous_attr_brightness
-            refresh_needed = refresh_needed or attr_changed
-
-            # Define a coroutine as a ha task.
-            async def _async_refresh() -> None:
-                """Turn on all lights controlled by this Lightener."""
-                self.async_update_group_state()
-                self.async_write_ha_state()
-
-            if refresh_needed:
-                if self._refresh_task and not self._refresh_task.done():
-                    self._refresh_task.cancel()
-                    try:
-                        await self._refresh_task
-                    except asyncio.CancelledError:
-                        pass
-
-                self._refresh_task = self.hass.async_create_task(
-                    _async_refresh(), name="Lightener [turn_on refresh]"
+                await self.hass.services.async_call(
+                    LIGHT_DOMAIN,
+                    service,
+                    entity_data,
+                    blocking=True,
+                    context=self._context,
                 )
+                _LOGGER.debug(
+                    "Service `%s` called for `%s` (%s) with `%s`",
+                    service,
+                    entity.entity_id,
+                    entity.type,
+                    entity_data,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.exception(
+                    "Service `%s` for `%s` (%s) failed: %s; payload=%s",
+                    service,
+                    entity.entity_id,
+                    entity.type,
+                    exc,
+                    entity_data,
+                )
+
+        try:
+            async with asyncio.TaskGroup() as group:
+                for entity in self._entities:
+                    service = SERVICE_TURN_ON
+                    entity_brightness = None
+
+                    # If the brightness is being set in the lightener, translate it to the entity level.
+                    if brightness is not None:
+                        entity_brightness = entity.translate_brightness(brightness)
+
+                    # If the light brightness level is zero, we turn it off instead.
+                    if entity_brightness == 0:
+                        service = SERVICE_TURN_OFF
+                        entity_data = {}
+
+                        # "Transition" is the only additional data allowed with the turn_off service.
+                        if ATTR_TRANSITION in data:
+                            entity_data[ATTR_TRANSITION] = data[ATTR_TRANSITION]
+                    else:
+                        # Make a copy of the data being sent to the lightener call so we can modify it.
+                        entity_data = data.copy()
+
+                        # Set the translated brightness level.
+                        if brightness is not None:
+                            entity_data[ATTR_BRIGHTNESS] = entity_brightness
+
+                        if color_value is not None and color_attribute is not None:
+                            state = self.hass.states.get(entity.entity_id)
+                            if state is not None and state.state == STATE_OFF:
+                                entity_data[color_attribute] = color_value
+
+                    # Set the proper entity ID.
+                    entity_data[ATTR_ENTITY_ID] = entity.entity_id
+
+                    # Submit the service call concurrently, guarded to avoid cancelling siblings on failure.
+                    group.create_task(_safe_service_call(entity, service, entity_data))
+                    refresh_needed = True
+        finally:
+            self._is_frozen = False
+
+        attr_changed = self._attr_brightness != previous_attr_brightness
+        refresh_needed = refresh_needed or attr_changed
+
+        # Define a coroutine as a ha task.
+        async def _async_refresh() -> None:
+            """Turn on all lights controlled by this Lightener."""
+            self.async_update_group_state()
+            self.async_write_ha_state()
+
+        if refresh_needed:
+            if self._refresh_task and not self._refresh_task.done():
+                self._refresh_task.cancel()
+                try:
+                    await self._refresh_task
+                except asyncio.CancelledError:
+                    pass
+
+            self._refresh_task = self.hass.async_create_task(
+                _async_refresh(), name="Lightener [turn_on refresh]"
+            )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off all lights controlled by this Lightener."""
@@ -396,49 +411,45 @@ class LightenerLight(LightGroup):
         # Let the Group integration make its magic, which includes recalculating the brightness.
         super().async_update_group_state()
 
-        common_level: set = None
+        common_level: set[int] | None = None
 
         if self.is_on:
             # Calculates the brighteness by checking if the current levels in al controlled lights
             # preciselly match one of the possible values for this lightener.
             levels = []
-            for entity_id in self._entity_ids:
-                state = self.hass.states.get(entity_id)
+            for entity in self._entities:
+                state = self.hass.states.get(entity.entity_id)
 
                 # State may return None if the entity is not available, so we ignore it.
-                if state is not None:
-                    for entity in self._entities:
-                        if entity.entity_id == state.entity_id:
-                            # Check if the entity state change is caused by this Lightener.
-                            is_lightener_change = (
-                                True
-                                if is_lightener_change
-                                else (
-                                    state.context
-                                    and self._context
-                                    and state.context.id == self._context.id
-                                )
-                            )
+                if state is None:
+                    continue
 
-                            if state.state == STATE_ON:
-                                entity_brightness = state.attributes.get(
-                                    ATTR_BRIGHTNESS, 255
-                                )
-                            else:
-                                entity_brightness = 0
+                # Check if the entity state change is caused by this Lightener.
+                is_lightener_change = (
+                    True
+                    if is_lightener_change
+                    else (
+                        state.context
+                        and self._context
+                        and state.context.id == self._context.id
+                    )
+                )
 
-                            _LOGGER.debug(
-                                "Current brightness of `%s` is `%s`",
-                                entity.entity_id,
-                                entity_brightness,
-                            )
+                if state.state == STATE_ON:
+                    entity_brightness = state.attributes.get(ATTR_BRIGHTNESS, 255)
+                else:
+                    entity_brightness = 0
 
-                            if entity_brightness is not None:
-                                levels.append(
-                                    entity.translate_brightness_back(entity_brightness)
-                                )
-                            else:
-                                levels.append([])
+                _LOGGER.debug(
+                    "Current brightness of `%s` is `%s`",
+                    entity.entity_id,
+                    entity_brightness,
+                )
+
+                if entity_brightness is not None:
+                    levels.append(entity.translate_brightness_back(entity_brightness))
+                else:
+                    levels.append([])
 
             if levels:
                 # If the current lightener level is not present in the possible levels of the controlled lights.
@@ -495,6 +506,7 @@ class LightenerControlledLight:
 
         self.entity_id = entity_id
         self.hass = hass
+        self._type: str | None = None
 
         # Get the brightness configuration and prepare it for processing,
         brightness_config = prepare_brightness_config(config.get("brightness", {}))
@@ -512,10 +524,18 @@ class LightenerControlledLight:
     def type(self) -> str | None:
         """The entity type."""
 
+        if self._type is not None:
+            return self._type
+
         try:
-            return get_light_type(self.hass, self.entity_id)
+            light_type = get_light_type(self.hass, self.entity_id)
         except HomeAssistantError:
             return None
+
+        if light_type is not None:
+            self._type = light_type
+
+        return light_type
 
     def translate_brightness(self, brightness: int) -> int:
         """Calculate the entitiy brightness for the give Lightener brightness level."""
