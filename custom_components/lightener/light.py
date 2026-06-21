@@ -134,7 +134,7 @@ class LightenerLight(LightGroup):
 
         super().__init__(
             unique_id=unique_id,
-            name=config_data[CONF_FRIENDLY_NAME] if unique_id is None else None,
+            name=config_data.get(CONF_FRIENDLY_NAME) if unique_id is None else None,
             entity_ids=entity_ids,
             mode=None,
         )
@@ -156,7 +156,7 @@ class LightenerLight(LightGroup):
 
         _LOGGER.debug(
             "Created lightener `%s`",
-            config_data[CONF_FRIENDLY_NAME],
+            config_data.get(CONF_FRIENDLY_NAME, config_data.get("entity_id", "?")),
         )
 
     @property
