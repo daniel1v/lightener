@@ -46,7 +46,9 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     if version is None or version == 1:
         new_data = await async_migrate_data(data, version)
 
-        hass.config_entries.async_update_entry(config_entry, data=new_data, version=2)
+        hass.config_entries.async_update_entry(
+            config_entry, data=new_data, version=LightenerConfigFlow.VERSION
+        )
 
         return True
 

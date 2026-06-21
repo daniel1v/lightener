@@ -13,6 +13,7 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.lightener import (
+    async_migrate_data,
     async_migrate_entry,
     async_unload_entry,
 )
@@ -130,6 +131,71 @@ async def test_migrate_entry_v1(hass: HomeAssistant) -> None:
             "light.test2": {"brightness": {"50": "60", "70": "80"}},
         },
     }
+
+
+async def test_migrate_entry_v1_sets_current_version(hass: HomeAssistant) -> None:
+    """Test that migration from v1 writes the current VERSION (not a hard-coded literal)."""
+
+    config_entry = ConfigEntry(
+        version=1,
+        minor_version=1,
+        title="lightener",
+        domain=DOMAIN,
+        data={"entities": {}},
+        source="user",
+        unique_id=None,
+        options=None,
+        discovery_keys=[],
+        subentries_data={},
+    )
+
+    with patch.object(hass.config_entries, "async_update_entry") as update_mock:
+        assert await async_migrate_entry(hass, config_entry) is True
+
+    assert update_mock.call_args.kwargs.get("version") == LightenerConfigFlow.VERSION
+
+
+async def test_migrate_data_version_none(hass: HomeAssistant) -> None:
+    """Test that async_migrate_data with version=None migrates the same way as v1."""
+
+    data = {
+        "friendly_name": "Legacy Light",
+        "entities": {
+            "light.old1": {"10": "20"},
+            "light.old2": {"50": "60", "80": "90"},
+        },
+    }
+
+    result = await async_migrate_data(data, version=None)
+
+    assert result == {
+        "friendly_name": "Legacy Light",
+        "entities": {
+            "light.old1": {"brightness": {"10": "20"}},
+            "light.old2": {"brightness": {"50": "60", "80": "90"}},
+        },
+    }
+
+
+async def test_migrate_data_no_friendly_name(hass: HomeAssistant) -> None:
+    """Test that async_migrate_data handles data without a friendly_name."""
+
+    data = {"entities": {"light.test1": {"10": "20"}}}
+
+    result = await async_migrate_data(data, version=1)
+
+    assert "friendly_name" not in result
+    assert result == {"entities": {"light.test1": {"brightness": {"10": "20"}}}}
+
+
+async def test_migrate_data_no_entities(hass: HomeAssistant) -> None:
+    """Test that async_migrate_data handles data with no entities key."""
+
+    data = {"friendly_name": "Test"}
+
+    result = await async_migrate_data(data, version=1)
+
+    assert result == {"friendly_name": "Test", "entities": {}}
 
 
 async def test_migrate_unkown_version(hass: HomeAssistant) -> None:

@@ -251,6 +251,42 @@ async def test_step_light_configuration_brightness_validation(
     await assert_value(True, "")
 
 
+async def test_step_light_configuration_unavailable_light(hass: HomeAssistant) -> None:
+    """Test config flow handles a selected light that loses its HA state mid-flow."""
+
+    result = await hass.config_entries.flow.async_init(
+        const.DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input={"name": "Test Name"}
+    )
+
+    # Select two lights to configure sequentially.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={"controlled_entities": ["light.test1", "light.test2"]},
+    )
+
+    assert result["step_id"] == "light_configuration"
+    # test1 has state — its friendly name is shown.
+    assert result["description_placeholders"]["light_name"] == "test1"
+
+    # Simulate test2 becoming unavailable before it's configured.
+    hass.states.async_remove("light.test2")
+
+    # Submit brightness for test1; the flow moves on to configure test2.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={"brightness": ""},
+    )
+
+    # test2 has no state — the guard activates: entity ID used as name, "?" as brightness.
+    assert result["type"] == "form"
+    assert result["step_id"] == "light_configuration"
+    assert result["description_placeholders"]["light_name"] == "light.test2"
+    assert result["description_placeholders"]["current_brightness"] == "?"
+
+
 def get_default(form: FlowResult, key: str) -> Any:
     """Get default value for key in voluptuous schema."""
 
