@@ -19,9 +19,10 @@ PLATFORMS = [Platform.LIGHT]
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up platform from a config entry."""
 
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    )
+    if not await async_migrate_entry(hass, entry):
+        return False
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
@@ -52,12 +53,12 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     if config_entry.version == LightenerConfigFlow.VERSION:
         return True
 
-    _LOGGER.error('Unknow configuration version "%i"', version)
+    _LOGGER.error('Unknown configuration version "%i"', version)
     return False
 
 
 async def async_migrate_data(
-    data: MappingProxyType[str, Any], version: int = None
+    data: MappingProxyType[str, Any], version: int | None = None
 ) -> MappingProxyType[str, Any]:
     """Update data from old versions of the configuration to the current format."""
 

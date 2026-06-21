@@ -512,7 +512,7 @@ async def test_lightener_light_async_update_group_state_current_good_no_change(
         }
     )
 
-    lightener._prefered_brightness = current  # pylint: disable=protected-access
+    lightener._preferred_brightness = current  # pylint: disable=protected-access
 
     hass.states.async_set(
         entity_id="light.test1", new_state="on", attributes={"brightness": test1}

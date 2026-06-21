@@ -26,6 +26,7 @@ from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ENTITY_ID,
+    CONF_BRIGHTNESS,
     CONF_ENTITIES,
     CONF_FRIENDLY_NAME,
     CONF_LIGHTS,
@@ -42,11 +43,20 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.util.color import value_to_brightness
 
-from . import async_migrate_data, async_migrate_entry
+from . import async_migrate_data
 from .const import DOMAIN, TYPE_ONOFF
 from .util import get_light_type
 
 _LOGGER = logging.getLogger(__name__)
+
+_COLOR_ATTRIBUTES = (
+    ATTR_COLOR_TEMP_KELVIN,
+    ATTR_RGB_COLOR,
+    ATTR_RGBW_COLOR,
+    ATTR_RGBWW_COLOR,
+    ATTR_HS_COLOR,
+    ATTR_XY_COLOR,
+)
 
 ENTITY_SCHEMA = vol.All(
     vol.DefaultTo({1: 1, 100: 100}),
@@ -77,8 +87,6 @@ async def async_setup_entry(
     """Set up entities for config entries."""
     unique_id = config_entry.entry_id
 
-    await async_migrate_entry(hass, config_entry)
-
     # The unique id of the light will simply match the config entry ID.
     async_add_entities([LightenerLight(hass, config_entry.data, unique_id)])
 
@@ -104,9 +112,6 @@ async def async_setup_platform(
 
 class LightenerLight(LightGroup):
     """Represents a Lightener light."""
-
-    _is_frozen = False
-    _prefered_brightness = None
 
     def __init__(
         self,
@@ -135,6 +140,8 @@ class LightenerLight(LightGroup):
         )
 
         self._attr_has_entity_name = unique_id is not None
+        self._is_frozen = False
+        self._preferred_brightness: int | None = None
         self._turn_on_lock = asyncio.Lock()
         self._pending_turn_on_kwargs: dict[str, Any] | None = None
         self._refresh_task: asyncio.Task | None = None
@@ -231,25 +238,15 @@ class LightenerLight(LightGroup):
             self._attr_brightness = brightness
 
         if brightness is None:
-            brightness = self._prefered_brightness
+            brightness = self._preferred_brightness
         else:
-            self._prefered_brightness = brightness
+            self._preferred_brightness = brightness
 
         _LOGGER.debug(
             "[Turn On] Attempting to set brightness of `%s` to `%s`",
             self.entity_id,
             brightness,
         )
-
-        # Identify color attributes already provided so we can default when needed.
-        color_attributes = [
-            ATTR_COLOR_TEMP_KELVIN,
-            ATTR_RGB_COLOR,
-            ATTR_RGBW_COLOR,
-            ATTR_RGBWW_COLOR,
-            ATTR_HS_COLOR,
-            ATTR_XY_COLOR,
-        ]
 
         _LOGGER.debug(
             "Current color mode for `%s` is `%s` with value %s",
@@ -261,7 +258,7 @@ class LightenerLight(LightGroup):
         color_attribute = None
         color_value = None
 
-        if not any(k in data for k in color_attributes):
+        if not any(k in data for k in _COLOR_ATTRIBUTES):
             if self.color_mode == ColorMode.COLOR_TEMP and self.color_temp_kelvin is not None:
                 color_attribute = ATTR_COLOR_TEMP_KELVIN
                 color_value = self.color_temp_kelvin
@@ -374,25 +371,16 @@ class LightenerLight(LightGroup):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off all lights controlled by this Lightener."""
+        self._preferred_brightness = self._attr_brightness
         self._is_frozen = True
-
-        self._prefered_brightness = self._attr_brightness
-
-        await super().async_turn_off(**kwargs)
+        try:
+            await super().async_turn_off(**kwargs)
+        finally:
+            self._is_frozen = False
 
         _LOGGER.debug("[Turn Off] Turned off `%s`", self.entity_id)
-
-        self._is_frozen = False
         self.async_update_group_state()
         self.async_write_ha_state()
-
-    def turn_on(self, **kwargs: Any) -> None:
-        """Turn the lights controlled by this Lightener on. There is no guarantee that this method is synchronous."""
-        self.async_turn_on(**kwargs)
-
-    def turn_off(self, **kwargs: Any) -> None:
-        """Turn the lights controlled by this Lightener off. There is no guarantee that this method is synchronous."""
-        self.async_turn_off(**kwargs)
 
     @callback
     def async_update_group_state(self) -> None:
@@ -452,8 +440,8 @@ class LightenerLight(LightGroup):
 
             if levels:
                 # If the current lightener level is not present in the possible levels of the controlled lights.
-                if len({self._prefered_brightness}.intersection(*map(set, levels))) > 0:
-                    common_level = {self._prefered_brightness}
+                if len({self._preferred_brightness}.intersection(*map(set, levels))) > 0:
+                    common_level = {self._preferred_brightness}
                 else:
                     # Build a list of levels which are common for all lights.
                     common_level = set.intersection(*map(set, levels))
@@ -463,7 +451,7 @@ class LightenerLight(LightGroup):
             self._attr_brightness = common_level.pop()
         else:
             self._attr_brightness = (
-                self._prefered_brightness
+                self._preferred_brightness
                 if is_lightener_change
                 else current_brightness
                 if self.is_on or was_off
@@ -508,7 +496,7 @@ class LightenerControlledLight:
         self._type: str | None = None
 
         # Get the brightness configuration and prepare it for processing,
-        brightness_config = prepare_brightness_config(config.get("brightness", {}))
+        brightness_config = prepare_brightness_config(config.get(CONF_BRIGHTNESS, {}))
 
         # Create the brightness conversion maps (from lightener to entity and from entity to lightener).
         self.levels = create_brightness_map(brightness_config)
