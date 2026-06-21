@@ -225,26 +225,28 @@ class LightenerFlow:
 
         light = self.local_data["current_light"]
         state = self.flow_handler.hass.states.get(light)
-        placeholders["light_name"] = state.name
+        placeholders["light_name"] = state.name if state is not None else light
 
-        light_type = get_light_type(hass=self.flow_handler.hass, entity_id=light)
+        if state is not None:
+            light_type = get_light_type(hass=self.flow_handler.hass, entity_id=light)
 
-        # Placeholder for the current brightness value (in percentage).
-        current_brightness = (
-            state.attributes.get("brightness", 0)
-            if light_type == TYPE_DIMMABLE
-            else 255
-            if light_type == TYPE_ONOFF and state.state == "on"
-            else 0
-        )
+            current_brightness = (
+                state.attributes.get("brightness", 0)
+                if light_type == TYPE_DIMMABLE
+                else 255
+                if light_type == TYPE_ONOFF and state.state == "on"
+                else 0
+            )
 
-        placeholders["current_brightness"] = (
-            f"{round(brightness_to_value((1, 100), current_brightness))}%"
-            if current_brightness
-            else "?"
-            if state.state == "on"
-            else "off"
-        )
+            placeholders["current_brightness"] = (
+                f"{round(brightness_to_value((1, 100), current_brightness))}%"
+                if current_brightness
+                else "?"
+                if state.state == "on"
+                else "off"
+            )
+        else:
+            placeholders["current_brightness"] = "?"
 
         if user_input is None:
             # Load the previously configured data.

@@ -527,7 +527,7 @@ class LightenerControlledLight:
     def translate_brightness(self, brightness: int) -> int:
         """Calculate the entitiy brightness for the give Lightener brightness level."""
 
-        level = self.levels.get(int(brightness))
+        level = self.levels.get(int(brightness), 0)
 
         if self.type == TYPE_ONOFF:
             return 0 if level == 0 else 255

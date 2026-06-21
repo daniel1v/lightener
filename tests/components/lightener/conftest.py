@@ -55,7 +55,7 @@ async def create_lightener(
 ) -> Callable[[str, dict], LightenerLight]:
     """Create a function used to create Lightners."""
 
-    async def creator(name: str | None = None, config: dict | None = None) -> str:
+    async def creator(name: str | None = None, config: dict | None = None) -> LightenerLight:
         entry = MockConfigEntry(
             domain="lightener",
             unique_id=str(uuid4()),
@@ -71,7 +71,14 @@ async def create_lightener(
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-        platform = async_get_platforms(hass, "lightener")
-        return platform[0].entities["light.test"]
+        for platform in async_get_platforms(hass, "lightener"):
+            for entity in platform.entities.values():
+                if (
+                    platform.config_entry is not None
+                    and platform.config_entry.entry_id == entry.entry_id
+                ):
+                    return entity  # type: ignore[return-value]
+
+        raise RuntimeError(f"No lightener entity found for entry {entry.entry_id}")
 
     return creator

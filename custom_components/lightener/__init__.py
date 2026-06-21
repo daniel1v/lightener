@@ -5,7 +5,7 @@ from types import MappingProxyType
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import CONF_BRIGHTNESS, CONF_ENTITIES, CONF_FRIENDLY_NAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntry
 
@@ -64,15 +64,13 @@ async def async_migrate_data(
 
     # Lightener 1.x didn't have config entries, just manual configuration.yaml. We consider this the no-version option.
     if version is None or version == 1:
-        new_data = {
-            "entities": {},
-        }
+        new_data: dict = {CONF_ENTITIES: {}}
 
-        if data.get("friendly_name") is not None:
-            new_data["friendly_name"] = data["friendly_name"]
+        if data.get(CONF_FRIENDLY_NAME) is not None:
+            new_data[CONF_FRIENDLY_NAME] = data[CONF_FRIENDLY_NAME]
 
-        for entity, brightness in data.get("entities", {}).items():
-            new_data.get("entities")[entity] = {"brightness": brightness}
+        for entity, brightness in data.get(CONF_ENTITIES, {}).items():
+            new_data[CONF_ENTITIES][entity] = {CONF_BRIGHTNESS: brightness}
 
         return new_data
 
