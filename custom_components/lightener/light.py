@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from types import MappingProxyType
 from typing import Any
@@ -364,10 +365,8 @@ class LightenerLight(LightGroup):
         if refresh_needed:
             if self._refresh_task and not self._refresh_task.done():
                 self._refresh_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await self._refresh_task
-                except asyncio.CancelledError:
-                    pass
 
             self._refresh_task = self.hass.async_create_task(
                 _async_refresh(), name="Lightener [turn_on refresh]"
