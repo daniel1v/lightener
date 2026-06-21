@@ -2,8 +2,7 @@ name: "Release"
 
 on:
   release:
-    types:
-      - "published"
+    types: ["published"]
 
 permissions: {}
 
@@ -14,22 +13,20 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: "Checkout the repository"
+      - name: "Checkout"
         uses: "actions/checkout@v4"
 
-      - name: "Adjust version number"
-        shell: "bash"
+      - name: "Update version in manifest.json"
         run: |
           yq -i -o json '.version="${{ github.event.release.tag_name }}"' \
-            "${{ github.workspace }}/custom_components/lightener/manifest.json"
+            custom_components/lightener/manifest.json
 
-      - name: "ZIP the integration directory"
-        shell: "bash"
+      - name: "Create ZIP"
         run: |
-          cd "${{ github.workspace }}/custom_components/lightener"
+          cd custom_components/lightener
           zip lightener.zip -r ./
 
-      - name: "Upload the ZIP file to the release"
-        uses: softprops/action-gh-release@v0.1.15
+      - name: "Upload ZIP to release"
+        uses: "softprops/action-gh-release@v2"
         with:
-          files: ${{ github.workspace }}/custom_components/lightener/lightener.zip
+          files: custom_components/lightener/lightener.zip

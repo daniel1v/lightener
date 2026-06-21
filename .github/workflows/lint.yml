@@ -2,22 +2,20 @@ name: "Lint"
 
 on:
   push:
-    branches:
-      - "master"
+    branches: ["master"]
   pull_request:
-    branches:
-      - "master"
+    branches: ["master"]
 
 jobs:
   ruff:
     name: "Ruff"
     runs-on: "ubuntu-latest"
     steps:
-        - name: "Checkout the repository"
-          uses: "actions/checkout@v4"
+      - name: "Checkout"
+        uses: "actions/checkout@v4"
 
-        - name: "Install ruff"
-          run: pip install ruff==0.15.18
+      - name: "Install ruff"
+        run: pip install ruff==0.15.18
 
-        - name: "Run"
-          run: ruff check .
+      - name: "Check"
+        run: ruff check .
