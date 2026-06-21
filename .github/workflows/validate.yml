@@ -6,10 +6,10 @@ on:
     - cron: "0 0 * * *"
   push:
     branches:
-      - "main"
+      - "master"
   pull_request:
     branches:
-      - "main"
+      - "master"
 
 jobs:
   hassfest: # https://developers.home-assistant.io/blog/2020/04/16/hassfest
@@ -30,6 +30,6 @@ jobs:
         uses: "actions/checkout@v4"
 
       - name: "Run HACS validation"
-        uses: "hacs/action@main"
+        uses: "hacs/action@master"
         with:
           category: "integration"
